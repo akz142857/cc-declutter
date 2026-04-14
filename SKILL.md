@@ -2,7 +2,7 @@
 name: cc-declutter
 description: Audit and safely prune a bloated Claude Code setup — skills, rules, hooks, plugins, session history. Reports context-window cost, recommends deletions by user stack, and generates a dry-run shell script (never auto-deletes). Use when Claude Code feels slow, skill lists are 200+ entries, session startup context is huge, or you suspect the config has accumulated cruft over time.
 origin: self
-version: 0.1.0
+version: 0.1.1
 ---
 
 # cc-declutter — Claude Code Slim-Down Assistant
@@ -81,8 +81,17 @@ Take a comma-separated stack hint from the user:
    - **core (always)** → `tdd-workflow`, `coding-standards`, `api-design`, `security-review`, `deep-research`
 
 2. **Create backup dir** `~/.claude/backups/<date>-cc-declutter/`
-   - Copy `settings.json`, `installed_plugins.json`, `rules/`, `skills/`, project MEMORY.md
-   - Add `RESTORE.md` with exact restore commands
+   - Always copy (cheap, small): `settings.json`, `installed_plugins.json`, `rules/`, project MEMORY.md
+   - **Targeted skill backup**: for each skill the plan will delete, copy its
+     full directory to `<backup>/skills/<skill-name>/`. Do NOT bulk-copy the
+     entire `~/.claude/skills/` tree — on a bloated install it's hundreds of MB
+     and wasteful. Only back up what you're about to destroy.
+   - Also write `<backup>/skills-manifests/` containing every skill's SKILL.md
+     (including skills that will be kept) as a forensic index — cheap,
+     useful for post-hoc "wait, what did I have?" questions.
+   - Add `RESTORE.md` with exact restore commands, distinguishing:
+     - ECC/plugin skills → can be restored by reinstalling the plugin
+     - User-authored skills → restore from `<backup>/skills/<name>/`
 
 3. **Write `~/.claude/backups/<date>-cc-declutter/prune.sh`** with:
    - Shebang `#!/usr/bin/env bash` + `set -euo pipefail`
@@ -174,9 +183,59 @@ run "python3 -c \"import json,pathlib; p=pathlib.Path.home()/'.claude/plugins/in
 run "python3 -c \"import json,pathlib; p=pathlib.Path.home()/'.claude/settings.json'; d=json.loads(p.read_text()); d.get('hooks', {}).pop('SessionStart', None); p.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\\n')\""
 
 # === Prune project session history (keep 5 most recent per project) ===
-# (project-by-project, oldest first)
+# Use Python (see "Session pruning" below) — not shell.
 ...
 ```
+
+---
+
+## Session pruning — use Python, not shell
+
+**Do not generate shell loops like `ls -t $dir/*.jsonl | tail -n +6 | xargs rm`.**
+They silently no-op on wrong paths and leave orphaned sibling directories.
+Emit the snippet below instead, wrapped in the script's `run` helper:
+
+```bash
+run "python3 - <<'PY'
+from pathlib import Path
+import shutil
+
+base = Path.home() / '.claude/projects'
+for proj in sorted(base.iterdir()):
+    if not proj.is_dir():
+        continue
+    jsonls = sorted(
+        [f for f in proj.iterdir() if f.is_file() and f.suffix == '.jsonl'],
+        key=lambda f: f.stat().st_mtime,
+        reverse=True,
+    )
+    for f in jsonls[5:]:                  # keep newest 5
+        uuid_dir = proj / f.stem          # sibling dir holding subagent data
+        if uuid_dir.is_dir():
+            shutil.rmtree(uuid_dir)
+        f.unlink()
+PY
+"
+```
+
+**Claude Code session layout** (as of 2026-04):
+
+```
+~/.claude/projects/<slug>/
+├── <session-uuid>.jsonl          ← transcript (what we sort by mtime)
+├── <session-uuid>/               ← sibling dir: subagents/, tool-results/
+│   ├── subagents/
+│   └── tool-results/
+├── memory/                       ← NEVER TOUCH: user's project memory
+└── ...
+```
+
+Non-negotiable rules for this operation:
+
+- Enumerate `.jsonl` files in the project root directly — not in subdirs
+- Match each deleted `.jsonl` with its sibling UUID directory and remove both
+- Never touch `memory/` or any non-UUID subdirectory
+- Configurable keep-count (default 5) — expose via flag in future iterations
 
 ---
 
@@ -192,6 +251,18 @@ run "python3 -c \"import json,pathlib; p=pathlib.Path.home()/'.claude/settings.j
   ~150 chars per line). Never delete unless user explicitly says to.
 - On Linux, `du -sh` behaves slightly differently than macOS BSD version.
   Prefer `du -sh --apparent-size` if available, else document the variance.
+- **Dry-run passing ≠ correctness.** Shell loops that reference non-existent
+  paths (`ls $missing/*.jsonl 2>/dev/null`) silently no-op in both dry-run
+  and real mode. Always validate target existence in the generator, not at
+  script run time. For anything involving directory layout assumptions,
+  prefer Python (see Session pruning section above).
+- **Never emit uncertainty into the generated script.** If the generator is
+  unsure whether to keep a skill (e.g. niche but stack-adjacent), it must
+  decide one way or the other BEFORE emitting the line. Comments like
+  `# actually keep? remove; niche` push the decision to the user at the worst
+  possible moment (script review), and if the user glosses over the comment,
+  it causes silent wrong deletes. Rule: every `rm` line gets a definite
+  reason. Every "keep" decision gets no line at all.
 
 ---
 
