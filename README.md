@@ -115,7 +115,7 @@ Requires: [Claude Code](https://claude.com/claude-code) installed.
 ### Option A — via `install.sh` (recommended)
 
 ```bash
-git clone https://github.com/ClayCosmos/cc-declutter.git
+git clone https://github.com/akz142857/cc-declutter.git
 cd cc-declutter
 bash install.sh                # symlink — recommended for developers
 # or

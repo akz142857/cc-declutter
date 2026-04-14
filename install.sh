@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # cc-declutter installer
-# https://github.com/ClayCosmos/cc-declutter
+# https://github.com/akz142857/cc-declutter
 #
 # Usage:
 #   bash install.sh              # symlink SKILL.md into ~/.claude/skills/cc-declutter/
