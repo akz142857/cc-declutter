@@ -29,3 +29,6 @@ __pycache__/
 
 # Shell scratch
 /scratch/
+
+# Claude Code per-project settings (user-local, not part of the project)
+.claude/
