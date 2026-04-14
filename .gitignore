@@ -1,0 +1,31 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+
+# Logs
+*.log
+
+# Temp
+*.tmp
+*.bak
+/tmp/
+
+# Python (if any helper scripts added later)
+__pycache__/
+*.pyc
+.venv/
+
+# Shell scratch
+/scratch/
